@@ -1,3 +1,4 @@
+<img width="1628" height="1175" alt="attention_chart" src="https://github.com/user-attachments/assets/0ff2edc0-4fe6-4fcb-9585-3cb855c54a77" />
 # Attention Drop Detector
 
 A Python tool that analyzes a video file and predicts where viewer attention is likely to drop — before publishing.
@@ -49,7 +50,9 @@ python analyzer.py myvideo.mp4
 
 With options:
 ```bash
-python analyzer.py myvideo.mp4 --window 8 --out results.json --chart
+<img width="1919" height="1079" alt="Screenshot 2026-04-26 141051" src="https://github.com/user-attachments/assets/c1dd2c4f-42e8-4b9c-8f13-02f24f9513d5" /><img width="1909" height="1078" alt="Screenshot 2026-04-26 141059" src="https://github.com/user-attachments/assets/4dd24004-213c-4f78-9c88-41587551292c" />
+<img width="1908" height="1075" alt="Screenshot 2026-04-26 141055" src="https://github.com/user-attachments/assets/e6d31460-45b9-4718-a67e-947aa4a557b8" />
+
 ```
 
 | Flag | Default | Description |
