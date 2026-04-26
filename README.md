@@ -1,5 +1,8 @@
 <img width="1628" height="1175" alt="attention_chart" src="https://github.com/user-attachments/assets/0ff2edc0-4fe6-4fcb-9585-3cb855c54a77" />
-# Attention Drop Detector
+
+
+
+## Attention Drop Detector
 
 A Python tool that analyzes a video file and predicts where viewer attention is likely to drop — before publishing.
 
