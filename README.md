@@ -1,133 +1,139 @@
-# 📉 Attention Drop Detector V6
+# 📉 Attention Drop Detector — V7
 
-This thing automatically sniffs out "attention drops" in your videos – those moments where viewers are probably zoning out because nothing's happening.
+> Know where viewers leave **before** you publish.
 
-Perfect for optimizing YouTube videos, Podcasts, Shorts/Reels, and Vlogs.
-
-## 🚀 Features
-
-The analyzer breaks down your video into sliding windows and scores them based on 4 key signals:
-- **👤 Face Presence:** Uses **MediaPipe FaceMesh** (468 landmarks) to robustly detect faces, even with glasses, movement, or partial occlusion.
-- **🏃 Motion Tracking:** Uses **OpenCV Farneback Optical Flow** to track pixel movement and ensure the frame isn't static.
-- **🔊 Audio Energy:** Uses **Librosa** to analyze spectral speech-band energy and speech probability.
-- **🎬 Scene Cuts:** Uses **PySceneDetect** to calculate the frequency of camera angle changes and B-roll.
+A Python-based video analysis tool that predicts attention drops in your content. Upload a video, get back a scored timeline, a list of drop zones, the reasons behind each drop, and actionable fixes — all inside a clean web UI.
 
 ---
 
-## What was wrong with face detection before?
+## 🚀 What it does
 
-So, in V4, I was using `FaceDetection` from MediaPipe. The problem with `FaceDetection` is it just looks for a face-shaped bounding box in the image. The moment there was any of the following, it just fell apart:
+The analyzer splits your video into time windows and scores each one across four signals:
 
--   **Glasses:** Totally messed it up because it occludes key facial regions it looks for.
--   **Arm movement:** Any motion blur on the frame when sampled would throw it off.
--   **Any head angle that isn't dead straight into the camera:** Forget about it.
--   **Slightly bad lighting:** Instant fail.
+| Signal | Method | Why it matters |
+|---|---|---|
+| **👤 Face Presence** | MediaPipe FaceMesh (468 landmarks) | Human faces keep viewers watching |
+| **🏃 Motion** | OpenCV Farneback Optical Flow | Static frames lose attention fast |
+| **🔊 Audio Energy** | Librosa spectral energy (300–3400 Hz) + speech probability | Dead audio = dead engagement |
+| **🎬 Scene Cuts** | PySceneDetect ContentDetector | Pacing keeps the brain stimulated |
 
-Lowering the confidence threshold to 0.25 helped a *little*, but it didn't fix the root cause. The model was still fundamentally looking for a clean, frontal face and just failing to find one if things weren't perfect.
-
-## What V6 does instead (the proper fix!)
-
-I switched to **MediaPipe FaceMesh**. This is a completely different approach, and it's way better.
-
-FaceMesh fits 468 3D facial landmarks onto your face. It doesn't look for a face-shaped region; it actively tracks a mesh across your face and tries to fit it even when things are partially obscured. It's dramatically more robust because:
-
--   **Glasses:** Landmarks are still visible around the glasses, so the mesh still fits.
--   **Movement:** It tracks the mesh across frames, not a fresh detection each time. This means it's much more stable.
--   **Angles:** It's a 3D mesh, so it handles rotation naturally.
--   **Blur:** The tracking confidence threshold is set to a super low 0.1, so it keeps going even on blurry frames.
-
-The confidence threshold is intentionally very low (0.1 detection, 0.1 tracking). We don't care about super clean, confident detections; we just want to know *if* a face is present or not. The `face_conf` value in the output is now the fraction of sampled frames where the mesh was found, not a model confidence score.
-
-I also bumped the frame sampling from 16 to 20 per window, so there are more chances to catch your face.
+Each window is scored, labelled (`engaging` / `neutral` / `drop`), and explained in plain English — with a suggested fix for every drop zone.
 
 ---
 
-## Other cool changes in V6
+## 🧠 Content Modes
 
--   **Cleaner codebase:** Removed a bunch of redundant code and made things tighter.
--   **UI redesign:** The web interface got a facelift with tighter spacing and cleaner cards.
--   **Face percentage in summary:** Now you can actually see the face detection percentage right in the summary cards.
--   **Window size selector:** The broken slider is gone, replaced with nice, clickable buttons (this was already in V4 but cleaned up).
+Scoring weights are tuned per content type so the drop thresholds make sense for your format:
 
----
-
-## Full Signal List
-
-| Signal | Method |
+| Mode | Weights |
 |---|---|
-| **Face** | MediaPipe FaceMesh, 468 landmarks, min confidence 0.1, 20 samples per window |
-| **Motion** | Farneback Optical Flow, soft capped at 8px/frame |
-| **Audio** | Librosa spectral energy in 300-3400Hz band + speech probability |
-| **Cuts** | PySceneDetect ContentDetector, threshold 27.0 |
+| `facecam` | Audio + Face dominant |
+| `podcast` | Audio dominant |
+| `gaming` | Motion + Audio |
+| `vlog` | Balanced |
+| `tutorial` | Audio + Cuts |
+| `shortform` | Cuts dominant (TikTok / Reels pacing) |
+| `cinematic` | Audio + Narration |
+| `default` | General balanced |
 
 ---
 
-## Limitations (because nothing's perfect, right?)
+## 📦 Tech Stack
 
--   FaceMesh still struggles with extreme side profiles (more than ~70 degrees from the camera).
--   Speech probability is estimated, not a definitive classification.
--   PySceneDetect may need threshold tuning on very dark or heavily compressed footage.
--   Scores are heuristic, meaning they're based on educated guesses, not trained on actual viewer retention data.
+- **Video:** OpenCV (motion via Farneback Optical Flow)
+- **Face:** MediaPipe FaceMesh
+- **Audio:** ffmpeg (extraction) + Librosa (spectral analysis)
+- **Cuts:** PySceneDetect ContentDetector
+- **UI:** Flask + vanilla HTML/CSS/JS
+- **Packaging:** PyInstaller (Windows `.exe`)
+
+---
 
 ## 💻 Installation & Setup
 
-> **⚠️ IMPORTANT: PYTHON VERSION**
-> You MUST use **Python 3.12 or older**. Google's MediaPipe does not yet support Python 3.13 on Windows and will silently fail to load.
+> **⚠️ Python version:** Use **Python 3.12 or older**. MediaPipe does not yet support Python 3.13 on Windows.
 
-1. **Clone the repo**
-2. **Install system dependencies:**
-   - Install FFmpeg and ensure it is added to your system `PATH`.
-     *(Windows users can simply run: `winget install ffmpeg`)*
-3. **Create a Virtual Environment (Highly Recommended):**
-   ```bash
-   python -m venv venv
-   # Windows
-   .\venv\Scripts\activate
-   # Mac/Linux
-   source venv/bin/activate
-   ```
-4. **Install Python dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+**1. Clone the repo**
+```bash
+git clone https://github.com/swaritsawarkar/attentiondropdetector.git
+cd attentiondropdetector
+```
+
+**2. Install FFmpeg** (required for audio extraction)
+```bash
+winget install ffmpeg
+```
+
+**3. Create a virtual environment**
+```bash
+python -m venv venv
+.\venv\Scripts\activate        # Windows
+# source venv/bin/activate     # Mac/Linux
+```
+
+**4. Install dependencies**
+```bash
+pip install -r requirements.txt
+```
+
+---
 
 ## 🎮 How to Use
 
-### Option 1: Web UI (Flask)
-The easiest way to use the tool is via the web interface.
-
+### Option 1: Web UI (recommended)
 ```bash
 python app.py
 ```
-*This will automatically open `http://localhost:7432` in your browser. Upload a video and watch the magic happen.*
+Opens `http://localhost:7432` automatically. Drag-and-drop your video, pick a content mode and window size, hit **Analyze**.
 
-### Option 2: Command Line (Standalone Analyzer)
-You can run the analyzer directly from your terminal and output a JSON file.
-
+### Option 2: Command Line
 ```bash
-python analyzer.py your_video.mp4 --mode default --chart
+python analyzer.py your_video.mp4 --mode facecam --window 5 --out result.json --chart
 ```
 
-**Available Modes:**
-You can adjust the scoring weights based on the content type:
-- `default`
-- `facecam` (Heavily weights face presence and audio)
-- `podcast` (Heavily weights audio, ignores motion)
-- `gaming` (Weights motion and audio)
-- `vlog`
-- `tutorial`
-- `shortform` (Requires frequent cuts and high energy)
-- `cinematic`
-
 ### Option 3: Extract Highlights
-Want to find the most engaging parts of your video for TikTok or Shorts?
-
+Find the most engaging segments for Shorts / Reels:
 ```bash
 python highlights.py result.json --top 3 --min-len 15
 ```
 
-## ⚠️ Known Issues / WIP
-- **PyInstaller Executable Build:** Building this project into a standalone `.exe` using PyInstaller currently causes missing module warnings (specifically with `PySceneDetect` and `MediaPipe`). For now, run via raw Python.
+---
+
+## 🖥️ Running the EXE (Windows)
+
+Download the latest release from the [Releases page](../../releases). Extract and run `app.exe` — no Python required.
 
 ---
-*Built with Python 🐍*
+
+## 📋 Version History
+
+### V7 — Face Detection Fix
+- **Fixed:** Face detection was sampling all frames from the very start of each window instead of spreading samples across the full window duration. Root cause: `cap.read()` in the loop advanced sequentially but the loop variable controlling step size was never used to seek — so a 5-second window at 30fps only ever saw its first ~0.7 seconds. Fixed with explicit `cap.set()` seeks evenly distributed across the window.
+- **Added:** All-black frame guard — some codecs return zero-value frames on bad seeks that silently fail MediaPipe. These are now skipped.
+- **Improved:** Large frames (>1280px wide) are now downscaled before inference for speed. Previously only upscaling was handled.
+
+### V6 — FaceMesh Migration
+- Replaced `FaceDetection` with `FaceMesh` (468 landmarks) for robustness with glasses, angles, movement, and partial occlusion.
+- Rewrote audio pipeline: ffmpeg extraction → Librosa spectral analysis in the 300–3400 Hz speech band.
+- Added content mode system with per-mode scoring weights.
+- New web UI with drag-and-drop upload, mode picker, window size selector, and score timeline chart.
+- PyInstaller EXE build working end-to-end.
+
+### V5 — Python 3.12 Migration
+- Fixed Python 3.13 incompatibility with MediaPipe.
+
+### V4 — Initial MediaPipe Integration
+- Introduced MediaPipe FaceDetection (later replaced in V6).
+
+---
+
+## ⚠️ Limitations
+
+- FaceMesh can struggle with extreme side profiles (>70° from camera).
+- Speech probability is estimated (ZCR + spectral centroid heuristic), not a trained classifier.
+- Scores are heuristic — not trained on real viewer retention data.
+- PySceneDetect may need threshold tuning on heavily compressed or very dark footage.
+
+---
+
+*Built with Python 🐍 · Made by Swarit Sawarkar*
