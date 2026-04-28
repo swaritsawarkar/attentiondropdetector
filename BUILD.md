@@ -2,41 +2,38 @@
 
 > **⚠️ IMPORTANT:** You must build this using **Python 3.12 or older** inside a Virtual Environment (`venv`). Python 3.13 will break the MediaPipe integration!
 
-## install dependencies
+## 1. Setup Environment
 
-1. Create and activate a venv:
-```cmd
+First, create and activate a Python virtual environment. This keeps your project's dependencies isolated.
+
+```bash
+# Create the virtual environment
 python -m venv venv
+
+# Activate it (for Windows PowerShell)
 .\venv\Scripts\activate
 ```
-pip install flask pyinstaller opencv-python numpy librosa matplotlib mediapipe scenedetect
+
+Next, install all the required packages from the `requirements.txt` file.
+
+```bash
+pip install -r requirements.txt
 ```
 
-## build
+## 2. Build the `.exe`
 
-```
-python -m PyInstaller attentiondrop.spec
-```
+Run the PyInstaller command. This bundles your `app.py`, all its dependencies, and the necessary data files (`templates`, `static`) into a single directory.
 
-exe outputs to `dist/AttentionDropDetector.exe`
-
-## run without exe (just python)
-
-```
-python app.py
+```bash
+pyinstaller --noconfirm --onedir --windowed --add-data "templates;templates" --add-data "static;static" --collect-all mediapipe --collect-all scenedetect --collect-all librosa app.py
 ```
 
-opens at http://localhost:7432
+## 3. Run the Application
 
-## what each library does
+The final executable will be located inside the `dist/app` folder. You can run it by double-clicking `app.exe` or by running this command from your project root:
 
-| library | role |
-|---|---|
-| flask | web server inside the exe |
-| opencv-python | video reading + Farneback optical flow |
-| numpy | numeric processing |
-| librosa | spectral audio analysis |
-| matplotlib | chart generation |
-| mediapipe | FaceMesh face detection (works with glasses, movement, angles) |
-| scenedetect | accurate cut detection |
-| pyinstaller | packages everything into the exe |
+```bash
+.\dist\app\app.exe
+```
+
+This will start the server and automatically open the user interface in your web browser.
