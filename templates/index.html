@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Attention Drop Detector</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,700;1,9..144,300&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --black:#080808;--white:#f5f4f0;--border:#232323;--muted:#4a4a4a;
+  --red:#d93030;--yellow:#c49a14;--green:#267a42;--surface:#0e0e0e;
+}
+html{scroll-behavior:smooth}
+body{background:var(--black);color:var(--white);font-family:'DM Mono',monospace;font-size:13px;line-height:1.6;min-height:100vh;cursor:crosshair}
+
+/* HEADER */
+header{border-bottom:1px solid var(--border);padding:0 48px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;background:var(--black);z-index:100}
+.logo{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.1em;color:var(--white);display:flex;align-items:center;gap:10px}
+.logo-dot{width:7px;height:7px;background:var(--white);border-radius:50%;animation:blink 2.4s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.2;transform:scale(.5)}}
+.header-right{font-size:10px;color:var(--muted);letter-spacing:.06em;text-align:right;line-height:1.6}
+
+/* HERO */
+.hero{padding:80px 48px 64px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr 1fr;gap:64px;align-items:end}
+.hero-title{font-family:'Fraunces',serif;font-size:clamp(48px,5.5vw,76px);font-weight:300;line-height:1;letter-spacing:-.02em}
+.hero-title em{font-style:italic;color:var(--muted)}
+.hero-desc{font-size:12px;color:var(--muted);line-height:1.9;max-width:320px;align-self:end}
+.hero-desc strong{color:var(--white);font-weight:400}
+
+/* SHARED */
+.section{padding:56px 48px;border-bottom:1px solid var(--border)}
+.section-label{font-size:10px;letter-spacing:.16em;color:var(--muted);text-transform:uppercase;margin-bottom:24px;display:flex;align-items:center;gap:12px}
+.section-label::after{content:'';flex:1;height:1px;background:var(--border)}
+
+/* UPLOAD */
+.drop-zone{border:1px dashed #2a2a2a;padding:72px 48px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;position:relative}
+.drop-zone:hover,.drop-zone.over{border-color:var(--white);background:#0f0f0f}
+.drop-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.dz-icon{font-family:'Bebas Neue',sans-serif;font-size:56px;color:#1e1e1e;line-height:1;margin-bottom:14px}
+.dz-title{font-family:'Fraunces',serif;font-size:20px;font-weight:300;margin-bottom:6px}
+.dz-sub{font-size:11px;color:var(--muted)}
+.file-row{display:none;align-items:center;gap:14px;margin-top:20px;padding:16px 20px;border:1px solid var(--border);background:var(--surface)}
+.file-row .fname{font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-row .fsize{font-size:11px;color:var(--muted);flex-shrink:0}
+.error-box{display:none;margin-top:14px;padding:14px 18px;border:1px solid var(--red);background:#160000;font-size:11px;color:#ff7070}
+
+/* MODE GRID */
+.mode-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border:1px solid var(--border);margin-bottom:32px}
+.mode-card{background:var(--black);padding:14px 12px;cursor:pointer;border:none;text-align:left;transition:background .15s;display:flex;flex-direction:column;gap:3px}
+.mode-card:hover{background:#0f0f0f}
+.mode-card.sel{background:var(--white)}
+.mode-card.sel .mname,.mode-card.sel .mbadge{color:var(--black)}
+.mode-card.sel .mdesc{color:#666}
+.mname{font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:.08em;color:var(--white)}
+.mdesc{font-size:10px;color:var(--muted);line-height:1.4;margin-top:2px}
+.mbadge{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:#333;margin-top:3px}
+
+/* WINDOW PICKER */
+.win-label{font-size:10px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase;margin-bottom:12px}
+.win-opts{display:flex;gap:1px;background:var(--border);border:1px solid var(--border);flex-wrap:wrap}
+.win-opt{background:var(--black);border:none;color:var(--muted);font-family:'DM Mono',monospace;font-size:11px;padding:9px 16px;cursor:pointer;transition:background .15s,color .15s;letter-spacing:.04em}
+.win-opt:hover{background:#0f0f0f;color:var(--white)}
+.win-opt.sel{background:var(--white);color:var(--black)}
+.win-hint{font-size:10px;color:var(--muted);margin-top:10px;line-height:1.7}
+
+/* ANALYZE BTN */
+.btn-row{display:flex;margin-top:28px}
+.btn-analyze{margin-left:auto;background:var(--white);color:var(--black);border:none;padding:12px 40px;font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:.1em;cursor:pointer;transition:background .15s,transform .1s}
+.btn-analyze:hover{background:#d8d7d3}
+.btn-analyze:active{transform:scale(.98)}
+.btn-analyze:disabled{background:#1e1e1e;color:#3a3a3a;cursor:not-allowed}
+
+/* PROGRESS */
+.prog-section{display:none;padding:48px;border-bottom:1px solid var(--border)}
+.step{display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid #111;opacity:.25;transition:opacity .3s}
+.step.active{opacity:1}
+.step.done{opacity:.55}
+.step-n{font-family:'Bebas Neue',sans-serif;font-size:14px;color:var(--muted);width:18px;text-align:center;flex-shrink:0}
+.step.active .step-n{color:var(--white)}
+.step-l{font-size:11px;color:var(--muted);flex:1}
+.step.active .step-l{color:var(--white)}
+.step-dot{width:5px;height:5px;background:var(--muted);border-radius:50%;flex-shrink:0}
+.step.done .step-dot{background:var(--green)}
+.step.active .step-dot{background:var(--white);animation:blink 1s infinite}
+.prog-bar{margin-top:28px;height:1px;background:var(--border);position:relative;overflow:hidden}
+.prog-fill{position:absolute;left:0;top:0;height:100%;background:var(--white);width:0%;transition:width .6s ease}
+
+/* RESULTS */
+.results-section{display:none;padding:56px 48px}
+.mode-tag{display:inline-block;font-size:10px;letter-spacing:.12em;text-transform:uppercase;padding:4px 10px;border:1px solid var(--border);color:var(--muted);margin-bottom:28px}
+
+.cards{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--border);border:1px solid var(--border);margin-bottom:56px}
+.card{background:var(--black);padding:22px 18px;display:flex;flex-direction:column;gap:5px}
+.card-l{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.card-v{font-family:'Fraunces',serif;font-size:26px;font-weight:300;line-height:1}
+.card-v.r{color:var(--red)}.card-v.y{color:var(--yellow)}.card-v.g{color:var(--green)}
+
+.chart-box{margin-bottom:56px}
+.chart-box img{width:100%;border:1px solid var(--border);display:block}
+
+.tl-bar{display:flex;height:28px;border:1px solid var(--border);overflow:hidden;margin-top:14px}
+.tl-seg{height:100%;transition:opacity .15s;cursor:default}
+.tl-seg:hover{opacity:.7}
+.tl-seg.drop{background:var(--red)}
+.tl-seg.neutral{background:#222018}
+.tl-seg.engaging{background:var(--green)}
+.tl-times{display:flex;justify-content:space-between;margin-top:5px;font-size:10px;color:var(--muted)}
+
+.drops{display:flex;flex-direction:column;gap:1px;background:var(--border);border:1px solid var(--border)}
+.drop-item{background:var(--black);padding:24px 28px;display:grid;grid-template-columns:110px 1fr 1fr;gap:28px;align-items:start;transition:background .15s}
+.drop-item:hover{background:#0b0b0b}
+.drop-time{font-family:'Fraunces',serif;font-size:18px;font-weight:300;color:var(--red);line-height:1.2}
+.drop-time small{display:block;font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);margin-top:3px;letter-spacing:.06em}
+.reasons,.fixes{display:flex;flex-direction:column;gap:7px}
+.rtag,.ftag{display:flex;gap:9px;align-items:flex-start;font-size:11px;color:#999;line-height:1.5}
+.rtag::before{content:'WHY';font-size:8px;letter-spacing:.1em;color:var(--red);padding-top:3px;flex-shrink:0}
+.ftag::before{content:'FIX';font-size:8px;letter-spacing:.1em;color:var(--green);padding-top:3px;flex-shrink:0}
+
+footer{border-top:1px solid var(--border);padding:22px 48px;display:flex;justify-content:space-between;align-items:center}
+.fl{font-size:11px;color:var(--muted);line-height:1.8}
+.fl strong{font-weight:400;color:#555;letter-spacing:.04em}
+.fr{font-family:'Bebas Neue',sans-serif;font-size:11px;letter-spacing:.18em;color:#1e1e1e}
+
+@media(max-width:900px){
+  .hero,.section,.results-section,.prog-section,header,footer{padding-left:20px;padding-right:20px}
+  .hero{grid-template-columns:1fr;gap:28px;padding-top:40px}
+  .cards{grid-template-columns:repeat(3,1fr)}
+  .drop-item{grid-template-columns:1fr;gap:14px}
+  .mode-grid{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><div class="logo-dot"></div>ATTENTION DROP DETECTOR</div>
+  <div class="header-right">made by Swarit Sawarkar<br>© 2026 ™</div>
+</header>
+
+<section class="hero">
+  <h1 class="hero-title">Know where<br>viewers <em>leave</em><br>before you<br>publish.</h1>
+  <p class="hero-desc">Upload your raw video. Extracts <strong>motion</strong>, <strong>scene cuts</strong>, <strong>audio energy</strong>, and <strong>face presence</strong> — then tells you exactly what second is dead and why.</p>
+</section>
+
+<section class="section">
+  <div class="section-label">01 — Upload</div>
+  <div class="drop-zone" id="dz">
+    <input type="file" id="fi" accept="video/*">
+    <div class="dz-icon">▲</div>
+    <div class="dz-title">Drop your video here</div>
+    <div class="dz-sub">MP4 · MKV · AVI · MOV — up to 2 GB</div>
+  </div>
+  <div class="file-row" id="fr"><span class="fname" id="fn">—</span><span class="fsize" id="fs">—</span></div>
+  <div class="error-box" id="eb"></div>
+
+  <div style="margin-top:36px">
+    <div class="section-label">02 — Content Type</div>
+    <div class="mode-grid">
+      <button class="mode-card sel" data-mode="facecam"><div class="mname">Face Cam</div><div class="mdesc">Talking to camera, no cuts expected</div><div class="mbadge">Audio + Face weighted</div></button>
+      <button class="mode-card" data-mode="podcast"><div class="mname">Podcast</div><div class="mdesc">Interview or long-form discussion</div><div class="mbadge">Audio dominant</div></button>
+      <button class="mode-card" data-mode="gaming"><div class="mname">Gaming</div><div class="mdesc">Gameplay + commentary</div><div class="mbadge">Motion + Audio</div></button>
+      <button class="mode-card" data-mode="vlog"><div class="mname">Vlog</div><div class="mdesc">Lifestyle, day in the life</div><div class="mbadge">Balanced</div></button>
+      <button class="mode-card" data-mode="tutorial"><div class="mname">Tutorial</div><div class="mdesc">Screenshare or demo with voiceover</div><div class="mbadge">Audio + Cuts</div></button>
+      <button class="mode-card" data-mode="shortform"><div class="mname">Short-form</div><div class="mdesc">Reels, TikTok, Shorts</div><div class="mbadge">Cuts dominant</div></button>
+      <button class="mode-card" data-mode="cinematic"><div class="mname">Cinematic</div><div class="mdesc">Film, essay, documentary</div><div class="mbadge">Audio + Narration</div></button>
+      <button class="mode-card" data-mode="default"><div class="mname">Default</div><div class="mdesc">General balanced weights</div><div class="mbadge">Balanced</div></button>
+    </div>
+  </div>
+
+  <div style="margin-top:32px">
+    <div class="win-label">03 — Analysis Window</div>
+    <div class="win-opts">
+      <button class="win-opt" data-v="2">2s</button>
+      <button class="win-opt" data-v="3">3s</button>
+      <button class="win-opt sel" data-v="5">5s</button>
+      <button class="win-opt" data-v="8">8s</button>
+      <button class="win-opt" data-v="10">10s</button>
+      <button class="win-opt" data-v="15">15s</button>
+      <button class="win-opt" data-v="20">20s</button>
+      <button class="win-opt" data-v="30">30s</button>
+    </div>
+    <div class="win-hint">
+      2-3s for short-form &nbsp;·&nbsp; 5-8s for facecam / vlog &nbsp;·&nbsp; 10-30s for podcast / long-form
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn-analyze" id="ab" disabled>ANALYZE</button>
+  </div>
+</section>
+
+<section class="prog-section" id="ps">
+  <div class="section-label">04 — Processing</div>
+  <div id="steps">
+    <div class="step" data-s="1"><span class="step-n">01</span><span class="step-l">Extracting motion (Optical Flow)</span><div class="step-dot"></div></div>
+    <div class="step" data-s="2"><span class="step-n">02</span><span class="step-l">Detecting scene cuts (PySceneDetect)</span><div class="step-dot"></div></div>
+    <div class="step" data-s="3"><span class="step-n">03</span><span class="step-l">Analyzing audio (spectral speech energy)</span><div class="step-dot"></div></div>
+    <div class="step" data-s="4"><span class="step-n">04</span><span class="step-l">Detecting faces (MediaPipe FaceMesh)</span><div class="step-dot"></div></div>
+    <div class="step" data-s="5"><span class="step-n">05</span><span class="step-l">Scoring and explaining drops</span><div class="step-dot"></div></div>
+    <div class="step" data-s="6"><span class="step-n">06</span><span class="step-l">Generating attention chart</span><div class="step-dot"></div></div>
+  </div>
+  <div class="prog-bar"><div class="prog-fill" id="pf"></div></div>
+</section>
+
+<section class="results-section" id="rs">
+  <div class="section-label">05 — Results</div>
+  <div class="mode-tag" id="mt"></div>
+  <div class="cards" id="cg"></div>
+  <div class="section-label">Score Timeline</div>
+  <div class="chart-box" id="cb"></div>
+  <div class="section-label">Engagement Map</div>
+  <div id="tl" style="margin-bottom:56px"></div>
+  <div class="section-label" id="dl">Drop Zones</div>
+  <div class="drops" id="dr"></div>
+</section>
+
+<footer>
+  <div class="fl"><strong>ATTENTION DROP DETECTOR</strong><br>Made by Swarit Sawarkar &nbsp;·&nbsp; © 2026 &nbsp;·&nbsp; All rights reserved ™</div>
+  <div class="fr">ATTENTION DROP DETECTOR™</div>
+</footer>
+
+<script>
+const dz = document.getElementById('dz');
+const fi = document.getElementById('fi');
+const fr = document.getElementById('fr');
+const fn = document.getElementById('fn');
+const fs = document.getElementById('fs');
+const ab = document.getElementById('ab');
+const eb = document.getElementById('eb');
+const ps = document.getElementById('ps');
+const rs = document.getElementById('rs');
+
+let selFile = null, selMode = 'facecam', selWin = 5;
+
+const fmt = {
+  size: b => b < 1048576 ? (b/1024).toFixed(1)+' KB' : b < 1073741824 ? (b/1048576).toFixed(1)+' MB' : (b/1073741824).toFixed(2)+' GB',
+  time: s => { const m=Math.floor(s/60),sec=Math.floor(s%60); return m+':'+String(sec).padStart(2,'0'); }
+};
+
+document.querySelectorAll('.mode-card').forEach(c => c.addEventListener('click', () => {
+  document.querySelectorAll('.mode-card').forEach(x => x.classList.remove('sel'));
+  c.classList.add('sel'); selMode = c.dataset.mode;
+}));
+
+document.querySelectorAll('.win-opt').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.win-opt').forEach(x => x.classList.remove('sel'));
+  b.classList.add('sel'); selWin = parseInt(b.dataset.v);
+}));
+
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
+fi.addEventListener('change', () => { if (fi.files[0]) setFile(fi.files[0]); });
+
+function setFile(f) {
+  selFile = f;
+  fn.textContent = f.name;
+  fs.textContent = fmt.size(f.size);
+  fr.style.display = 'flex';
+  ab.disabled = false;
+  eb.style.display = 'none';
+}
+
+ab.addEventListener('click', async () => {
+  if (!selFile) return;
+  ab.disabled = true;
+  ps.style.display = 'block';
+  rs.style.display = 'none';
+  eb.style.display = 'none';
+  ps.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  const fd = new FormData();
+  fd.append('video', selFile);
+  fd.append('window', selWin);
+  fd.append('mode', selMode);
+
+  let jobId;
+  try {
+    const r = await fetch('/analyze', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    jobId = d.job_id;
+  } catch(e) { showErr(e.message); ab.disabled = false; return; }
+
+  const poll = setInterval(async () => {
+    try {
+      const r = await fetch('/status/' + jobId);
+      const d = await r.json();
+      if (d.progress) setStep(d.progress.step);
+      if (d.status === 'done') {
+        clearInterval(poll);
+        setStep(6);
+        setTimeout(() => render(d.result, d.chart_b64), 400);
+        ab.disabled = false;
+      } else if (d.status === 'error') {
+        clearInterval(poll);
+        showErr(d.error || 'Analysis failed');
+        ab.disabled = false;
+      }
+    } catch(e) { clearInterval(poll); showErr(e.message); ab.disabled = false; }
+  }, 800);
+});
+
+function setStep(n) {
+  document.querySelectorAll('#steps .step').forEach(el => {
+    const s = parseInt(el.dataset.s);
+    el.classList.remove('active','done');
+    if (s < n) el.classList.add('done');
+    else if (s === n) el.classList.add('active');
+  });
+  document.getElementById('pf').style.width = (n/6*100)+'%';
+}
+
+function showErr(msg) {
+  eb.textContent = 'Error: ' + msg;
+  eb.style.display = 'block';
+  ps.style.display = 'none';
+}
+
+const MLABELS = {
+  facecam:'Face / Talking Head', podcast:'Podcast / Interview',
+  gaming:'Gaming', vlog:'Vlog / Lifestyle', tutorial:'Tutorial / Screenshare',
+  shortform:'Short-form / Reels / TikTok', cinematic:'Cinematic / Film / Essay', default:'Default'
+};
+
+function render(res, chart) {
+  const s = res.summary;
+  document.getElementById('mt').textContent = 'Mode: '+(MLABELS[res.mode]||res.mode)+' · Window: '+res.window_sec+'s';
+
+  document.getElementById('cg').innerHTML = [
+    {l:'Duration',   v:fmt.time(res.duration), c:''},
+    {l:'Avg Score',  v:Math.round(s.avg_score*100)+'%', c:''},
+    {l:'Drop Zones', v:s.drop_count,    c:'r'},
+    {l:'Neutral',    v:s.neutral_count, c:'y'},
+    {l:'Engaging',   v:s.engaging_count,c:'g'},
+    {l:'Face Detect',v:Math.round(s.face_pct*100)+'%', c:''},
+  ].map(x=>`<div class="card"><div class="card-l">${x.l}</div><div class="card-v ${x.c}">${x.v}</div></div>`).join('');
+
+  document.getElementById('cb').innerHTML = chart
+    ? `<img src="data:image/png;base64,${chart}" alt="chart">`
+    : '<p style="color:var(--muted);font-size:11px;padding:16px">Chart unavailable</p>';
+
+  const dur = res.duration;
+  document.getElementById('tl').innerHTML =
+    `<div class="tl-bar">${res.windows.map(w=>{
+      const p=((w.end-w.start)/dur*100).toFixed(2);
+      return `<div class="tl-seg ${w.label}" style="width:${p}%" title="${fmt.time(w.start)}-${fmt.time(w.end)} · ${Math.round(w.score*100)}%"></div>`;
+    }).join('')}</div>
+    <div class="tl-times"><span>0:00</span><span>${fmt.time(dur/2)}</span><span>${fmt.time(dur)}</span></div>`;
+
+  document.getElementById('dl').textContent = `Drop Zones (${res.drops.length})`;
+  document.getElementById('dr').innerHTML = res.drops.length === 0
+    ? '<div style="padding:28px;font-size:11px;color:var(--muted)">No drop zones — looking clean.</div>'
+    : res.drops.map(d=>`
+      <div class="drop-item">
+        <div class="drop-time">${fmt.time(d.start)} – ${fmt.time(d.end)}<small>DROP ZONE</small></div>
+        <div class="reasons">${d.reasons.map(r=>`<div class="rtag">${r}</div>`).join('')}</div>
+        <div class="fixes">${d.suggestions.map(x=>`<div class="ftag">${x}</div>`).join('')}</div>
+      </div>`).join('');
+
+  ps.style.display = 'none';
+  rs.style.display = 'block';
+  rs.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+</script>
+</body>
+</html>

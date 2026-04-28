@@ -1,0 +1,8 @@
+opencv-python
+librosa
+mediapipe==0.10.14
+scenedetect
+flask
+matplotlib
+numpy
+pyinstaller
