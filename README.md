@@ -1,6 +1,6 @@
-# 📉 Attention Drop Detector (v6)
+# 📉 Attention Drop Detector V6
 
-An automated video analysis tool designed to detect "attention drops"—moments where viewer engagement is likely to fall due to a lack of motion, audio energy, facial presence, or scene cuts.
+This thing automatically sniffs out "attention drops" in your videos – those moments where viewers are probably zoning out because nothing's happening.
 
 Perfect for optimizing YouTube videos, Podcasts, Shorts/Reels, and Vlogs.
 
@@ -12,12 +12,62 @@ The analyzer breaks down your video into sliding windows and scores them based o
 - **🔊 Audio Energy:** Uses **Librosa** to analyze spectral speech-band energy and speech probability.
 - **🎬 Scene Cuts:** Uses **PySceneDetect** to calculate the frequency of camera angle changes and B-roll.
 
-## 🧠 Technical Challenges Overcome (Portfolio Notes)
-Building a reliable, offline AI-analysis tool on Windows brought several unique engineering challenges:
-1. **Audio Decoding & FFmpeg Resiliency:** Standard audio loaders (`librosa`/`audioread`) silently failed on Windows MP4s due to missing system bindings. I built a robust `subprocess` pipeline that safely interfaces with FFmpeg to extract temporary uncompressed `.wav` files, guaranteeing accurate spectral energy scoring.
-2. **MediaPipe C++ Binding Crashes:** Discovered that Google's MediaPipe lacks pre-compiled C++ binaries for the newly released Python 3.13, causing silent module failures. I engineered custom traceback error handling to detect this environment mismatch and strictly isolated the app in a locked Python 3.12 Virtual Environment (`venv`).
-3. **Temporal Tracking Limitations:** Seeking to specific video timestamps (`cap.set()`) broke the temporal continuity expected by MediaPipe's tracking algorithms (resulting in 0% face detection). Fixed by explicitly forcing `static_image_mode=True` to treat every sampled frame as a fresh inference.
-4. **PyInstaller Executable Packaging:** Freezing heavy AI libraries into a standalone `.exe` caused missing dynamic DLLs and hidden imports. Solved by mapping comprehensive `--collect-all` hooks for `mediapipe`, `scenedetect`, and `librosa` directly into the build pipeline.
+---
+
+## What was wrong with face detection before?
+
+So, in V4, I was using `FaceDetection` from MediaPipe. The problem with `FaceDetection` is it just looks for a face-shaped bounding box in the image. The moment there was any of the following, it just fell apart:
+
+-   **Glasses:** Totally messed it up because it occludes key facial regions it looks for.
+-   **Arm movement:** Any motion blur on the frame when sampled would throw it off.
+-   **Any head angle that isn't dead straight into the camera:** Forget about it.
+-   **Slightly bad lighting:** Instant fail.
+
+Lowering the confidence threshold to 0.25 helped a *little*, but it didn't fix the root cause. The model was still fundamentally looking for a clean, frontal face and just failing to find one if things weren't perfect.
+
+## What V6 does instead (the proper fix!)
+
+I switched to **MediaPipe FaceMesh**. This is a completely different approach, and it's way better.
+
+FaceMesh fits 468 3D facial landmarks onto your face. It doesn't look for a face-shaped region; it actively tracks a mesh across your face and tries to fit it even when things are partially obscured. It's dramatically more robust because:
+
+-   **Glasses:** Landmarks are still visible around the glasses, so the mesh still fits.
+-   **Movement:** It tracks the mesh across frames, not a fresh detection each time. This means it's much more stable.
+-   **Angles:** It's a 3D mesh, so it handles rotation naturally.
+-   **Blur:** The tracking confidence threshold is set to a super low 0.1, so it keeps going even on blurry frames.
+
+The confidence threshold is intentionally very low (0.1 detection, 0.1 tracking). We don't care about super clean, confident detections; we just want to know *if* a face is present or not. The `face_conf` value in the output is now the fraction of sampled frames where the mesh was found, not a model confidence score.
+
+I also bumped the frame sampling from 16 to 20 per window, so there are more chances to catch your face.
+
+---
+
+## Other cool changes in V6
+
+-   **Cleaner codebase:** Removed a bunch of redundant code and made things tighter.
+-   **UI redesign:** The web interface got a facelift with tighter spacing and cleaner cards.
+-   **Face percentage in summary:** Now you can actually see the face detection percentage right in the summary cards.
+-   **Window size selector:** The broken slider is gone, replaced with nice, clickable buttons (this was already in V4 but cleaned up).
+
+---
+
+## Full Signal List
+
+| Signal | Method |
+|---|---|
+| **Face** | MediaPipe FaceMesh, 468 landmarks, min confidence 0.1, 20 samples per window |
+| **Motion** | Farneback Optical Flow, soft capped at 8px/frame |
+| **Audio** | Librosa spectral energy in 300-3400Hz band + speech probability |
+| **Cuts** | PySceneDetect ContentDetector, threshold 27.0 |
+
+---
+
+## Limitations (because nothing's perfect, right?)
+
+-   FaceMesh still struggles with extreme side profiles (more than ~70 degrees from the camera).
+-   Speech probability is estimated, not a definitive classification.
+-   PySceneDetect may need threshold tuning on very dark or heavily compressed footage.
+-   Scores are heuristic, meaning they're based on educated guesses, not trained on actual viewer retention data.
 
 ## 💻 Installation & Setup
 
