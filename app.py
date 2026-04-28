@@ -1,5 +1,5 @@
 """
-Attention Drop Detector V5 - app.py
+Attention Drop Detector V6 - app.py
 Flask backend. Handles uploads, runs analysis in background thread,
 streams progress via polling. Opens browser automatically on launch.
 """
@@ -140,6 +140,6 @@ def status(job_id):
 if __name__ == "__main__":
     import webbrowser
     port = 7432
-    print(f"Attention Drop Detector V5 — http://localhost:{port}")
+    print(f"Attention Drop Detector V6 — http://localhost:{port}")
     threading.Timer(1.2, lambda: webbrowser.open(f"http://localhost:{port}")).start()
     app.run(port=port, debug=False, threaded=True)

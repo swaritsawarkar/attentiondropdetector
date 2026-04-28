@@ -1,4 +1,4 @@
-# Building the exe — V5
+# Building the exe — V6
 
 > **⚠️ IMPORTANT:** You must build this using **Python 3.12 or older** inside a Virtual Environment (`venv`). Python 3.13 will break the MediaPipe integration!
 

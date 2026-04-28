@@ -1,6 +1,6 @@
-# 📉 Attention Drop Detector (v5)
+# 📉 Attention Drop Detector (v6)
 
-An automated video analysis tool designed to detect "attention drops"—moments where viewer engagement is likely to fall due to a lack of motion, audio energy, facial presence, or scene cuts. 
+An automated video analysis tool designed to detect "attention drops"—moments where viewer engagement is likely to fall due to a lack of motion, audio energy, facial presence, or scene cuts.
 
 Perfect for optimizing YouTube videos, Podcasts, Shorts/Reels, and Vlogs.
 

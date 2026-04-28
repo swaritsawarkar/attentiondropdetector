@@ -1,5 +1,5 @@
 """
-Attention Drop Detector V5 - analyzer.py
+Attention Drop Detector V6 - analyzer.py
 ==========================================
 Signal pipeline:
   - Face: MediaPipe FaceMesh (468 landmarks, works with glasses/movement/angles)
