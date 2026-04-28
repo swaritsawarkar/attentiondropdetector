@@ -262,7 +262,11 @@ class AudioExtractor:
             # Use ffmpeg to extract audio robustly into a temp wav file
             cmd = ["ffmpeg", "-y", "-i", self.path, "-vn", "-acodec", "pcm_s16le", "-ar", "22050", "-ac", "1", tmp_wav.name]
             try:
-                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                kwargs = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "check": True}
+                if sys.platform == "win32":
+                    # This flag is specific to Windows and prevents the console window.
+                    kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+                subprocess.run(cmd, **kwargs)
                 audio_source = tmp_wav.name
             except (subprocess.CalledProcessError, FileNotFoundError):
                 print("  [warn] ffmpeg not found/failed. Trying direct load (may fail for MP4).")
@@ -331,30 +335,52 @@ class FaceExtractor:
         if not cap.isOpened():
             return
 
-        fps        = cap.get(cv2.CAP_PROP_FPS) or 30.0
-        win_frames = int(self.window_sec * fps)
+        fps           = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        total_frames  = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        win_frames    = int(self.window_sec * fps)
+        n_samples     = 20  # how many frames to sample per window
 
         with _mp_face_mesh.FaceMesh(
-            static_image_mode=True,         # True because we seek/skip frames, no temporal continuity
+            static_image_mode=True,         # True because we seek across the video, no temporal continuity
             max_num_faces=2,
             refine_landmarks=True,
             min_detection_confidence=0.1,   # very low — we just want to know if face exists
         ) as mesh:
             for w in windows:
-                cap.set(cv2.CAP_PROP_POS_FRAMES, int(w.start * fps))
-                detections = 0
-                total      = 0
-                step       = max(1, win_frames // 20)  # 20 samples per window
+                start_frame = int(w.start * fps)
+                end_frame   = min(int(w.end * fps), total_frames - 1)
+                actual_frames = max(end_frame - start_frame, 1)
 
-                for _ in range(0, win_frames, step):
+                # Spread sample positions evenly across the full window duration.
+                # Previously cap.read() was called sequentially, so all 20 samples
+                # landed on the first ~0.7s of each window — the rest was never seen.
+                step        = max(1, actual_frames // n_samples)
+                sample_positions = range(start_frame, end_frame, step)
+
+                detections  = 0
+                total       = 0
+
+                for frame_idx in sample_positions:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
                     ret, frame = cap.read()
                     if not ret:
-                        break
+                        continue
+
+                    # Guard against silent all-black frames that some codecs return
+                    # on bad seeks — MediaPipe always returns None for these.
+                    if frame is None or frame.size == 0 or frame.max() == 0:
+                        continue
+
                     total += 1
-                    # upscale small frames so mesh has enough detail to work with
+
+                    # Downscale very large frames to 720p-wide for speed;
+                    # upscale tiny frames so landmarks have enough pixel detail.
                     h, ww = frame.shape[:2]
-                    if ww < 640:
+                    if ww > 1280:
+                        frame = cv2.resize(frame, (1280, int(h * 1280 / ww)))
+                    elif ww < 640:
                         frame = cv2.resize(frame, (640, int(h * 640 / ww)))
+
                     rgb     = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     results = mesh.process(rgb)
                     if results.multi_face_landmarks:
