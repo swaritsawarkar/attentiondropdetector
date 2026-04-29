@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Attention Drop Detector</title>
+<title>Attention Drop Detector — V8</title>
+<meta name="description" content="AI-powered video analysis that detects attention drops before you publish. Analyzes motion, audio, face presence and scene cuts.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,700;1,9..144,300&display=swap" rel="stylesheet">
@@ -85,21 +86,22 @@ header{border-bottom:1px solid var(--border);padding:0 48px;display:flex;align-i
 .step-dot{width:5px;height:5px;background:var(--muted);border-radius:50%;flex-shrink:0}
 .step.done .step-dot{background:var(--green)}
 .step.active .step-dot{background:var(--white);animation:blink 1s infinite}
-.prog-bar{margin-top:28px;height:1px;background:var(--border);position:relative;overflow:hidden}
-.prog-fill{position:absolute;left:0;top:0;height:100%;background:var(--white);width:0%;transition:width .6s ease}
+.prog-bar{margin-top:28px;height:2px;background:var(--border);position:relative;overflow:hidden;border-radius:1px}
+.prog-fill{position:absolute;left:0;top:0;height:100%;background:var(--white);width:0%;transition:width .7s cubic-bezier(.4,0,.2,1)}
 
 /* RESULTS */
 .results-section{display:none;padding:56px 48px}
+.audio-warn{display:inline-block;margin-bottom:18px;padding:8px 14px;border:1px solid #3a2a00;background:#1a1200;font-size:10px;color:#c49a14;letter-spacing:.06em}
 .mode-tag{display:inline-block;font-size:10px;letter-spacing:.12em;text-transform:uppercase;padding:4px 10px;border:1px solid var(--border);color:var(--muted);margin-bottom:28px}
 
-.cards{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--border);border:1px solid var(--border);margin-bottom:56px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:1px;background:var(--border);border:1px solid var(--border);margin-bottom:56px}
 .card{background:var(--black);padding:22px 18px;display:flex;flex-direction:column;gap:5px}
 .card-l{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .card-v{font-family:'Fraunces',serif;font-size:26px;font-weight:300;line-height:1}
 .card-v.r{color:var(--red)}.card-v.y{color:var(--yellow)}.card-v.g{color:var(--green)}
 
-.chart-box{margin-bottom:56px}
-.chart-box img{width:100%;border:1px solid var(--border);display:block}
+.chart-box{margin-bottom:56px;overflow:hidden}
+.chart-box img{width:100%;max-height:480px;object-fit:contain;border:1px solid var(--border);display:block;background:var(--surface)}
 
 .tl-bar{display:flex;height:28px;border:1px solid var(--border);overflow:hidden;margin-top:14px}
 .tl-seg{height:100%;transition:opacity .15s;cursor:default}
@@ -137,7 +139,7 @@ footer{border-top:1px solid var(--border);padding:22px 48px;display:flex;justify
 
 <header>
   <div class="logo"><div class="logo-dot"></div>ATTENTION DROP DETECTOR</div>
-  <div class="header-right">made by Swarit Sawarkar<br>© 2026 ™</div>
+  <div class="header-right">v8 &nbsp;·&nbsp; made by Swarit Sawarkar<br>© 2026 ™</div>
 </header>
 
 <section class="hero">
@@ -151,7 +153,7 @@ footer{border-top:1px solid var(--border);padding:22px 48px;display:flex;justify
     <input type="file" id="fi" accept="video/*">
     <div class="dz-icon">▲</div>
     <div class="dz-title">Drop your video here</div>
-    <div class="dz-sub">MP4 · MKV · AVI · MOV — up to 2 GB</div>
+    <div class="dz-sub">MP4 · MKV · AVI · MOV &nbsp;·&nbsp; max 10 minutes</div>
   </div>
   <div class="file-row" id="fr"><span class="fname" id="fn">—</span><span class="fsize" id="fs">—</span></div>
   <div class="error-box" id="eb"></div>
@@ -171,7 +173,7 @@ footer{border-top:1px solid var(--border);padding:22px 48px;display:flex;justify
   </div>
 
   <div style="margin-top:32px">
-    <div class="win-label">03 — Analysis Window</div>
+    <div class="win-label">03 — Analysis Window <span style="color:#333;font-size:9px">(granularity of scored segments)</span></div>
     <div class="win-opts">
       <button class="win-opt" data-v="2">2s</button>
       <button class="win-opt" data-v="3">3s</button>
@@ -183,7 +185,7 @@ footer{border-top:1px solid var(--border);padding:22px 48px;display:flex;justify
       <button class="win-opt" data-v="30">30s</button>
     </div>
     <div class="win-hint">
-      2-3s for short-form &nbsp;·&nbsp; 5-8s for facecam / vlog &nbsp;·&nbsp; 10-30s for podcast / long-form
+      2-3s — short-form &nbsp;·&nbsp; 5-8s — facecam/vlog &nbsp;·&nbsp; 10-30s — podcast/long-form
     </div>
   </div>
 
@@ -208,10 +210,11 @@ footer{border-top:1px solid var(--border);padding:22px 48px;display:flex;justify
 <section class="results-section" id="rs">
   <div class="section-label">05 — Results</div>
   <div class="mode-tag" id="mt"></div>
+  <div id="aw"></div>
   <div class="cards" id="cg"></div>
   <div class="section-label">Score Timeline</div>
   <div class="chart-box" id="cb"></div>
-  <div class="section-label">Engagement Map</div>
+  <div class="section-label">Engagement Map <span id="tl-legend" style="font-size:9px;color:#333;letter-spacing:.04em;text-transform:none"></span></div>
   <div id="tl" style="margin-bottom:56px"></div>
   <div class="section-label" id="dl">Drop Zones</div>
   <div class="drops" id="dr"></div>
@@ -330,13 +333,23 @@ function render(res, chart) {
   const s = res.summary;
   document.getElementById('mt').textContent = 'Mode: '+(MLABELS[res.mode]||res.mode)+' · Window: '+res.window_sec+'s';
 
+  // Audio warning banner
+  const aw = document.getElementById('aw');
+  if (s.audio_available === false) {
+    aw.innerHTML = '<div class="audio-warn">⚠ AUDIO UNAVAILABLE — Install ffmpeg for audio analysis: winget install ffmpeg</div>';
+  } else { aw.innerHTML = ''; }
+
+  const faceColor = s.face_pct > 0.7 ? 'g' : s.face_pct > 0.3 ? 'y' : 'r';
+  const scoreColor = s.avg_score > 0.6 ? 'g' : s.avg_score > 0.35 ? 'y' : 'r';
   document.getElementById('cg').innerHTML = [
-    {l:'Duration',   v:fmt.time(res.duration), c:''},
-    {l:'Avg Score',  v:Math.round(s.avg_score*100)+'%', c:''},
-    {l:'Drop Zones', v:s.drop_count,    c:'r'},
-    {l:'Neutral',    v:s.neutral_count, c:'y'},
-    {l:'Engaging',   v:s.engaging_count,c:'g'},
-    {l:'Face Detect',v:Math.round(s.face_pct*100)+'%', c:''},
+    {l:'Duration',      v:fmt.time(res.duration),                  c:''},
+    {l:'Avg Score',     v:Math.round(s.avg_score*100)+'%',         c:scoreColor},
+    {l:'Drop Zones',   v:s.drop_count,                             c: s.drop_count>0?'r':'g'},
+    {l:'Neutral',       v:s.neutral_count,                         c:'y'},
+    {l:'Engaging',      v:s.engaging_count,                        c:'g'},
+    {l:'Face Detect',  v:Math.round(s.face_pct*100)+'%',           c:faceColor},
+    {l:'Face Conf',    v:Math.round(s.avg_face_conf*100)+'%',      c:''},
+    {l:'Audio',        v: s.audio_available===false?'Off':'On',    c: s.audio_available===false?'r':'g'},
   ].map(x=>`<div class="card"><div class="card-l">${x.l}</div><div class="card-v ${x.c}">${x.v}</div></div>`).join('');
 
   document.getElementById('cb').innerHTML = chart
@@ -344,10 +357,15 @@ function render(res, chart) {
     : '<p style="color:var(--muted);font-size:11px;padding:16px">Chart unavailable</p>';
 
   const dur = res.duration;
+  const dropCount = res.windows.filter(w=>w.label==='drop').length;
+  const engCount  = res.windows.filter(w=>w.label==='engaging').length;
+  document.getElementById('tl-legend').textContent =
+    `${engCount} engaging · ${dropCount} drop${dropCount!==1?'s':''}`;
   document.getElementById('tl').innerHTML =
     `<div class="tl-bar">${res.windows.map(w=>{
       const p=((w.end-w.start)/dur*100).toFixed(2);
-      return `<div class="tl-seg ${w.label}" style="width:${p}%" title="${fmt.time(w.start)}-${fmt.time(w.end)} · ${Math.round(w.score*100)}%"></div>`;
+      const tip=`${fmt.time(w.start)}–${fmt.time(w.end)} · ${Math.round(w.score*100)}% · ${w.label}`;
+      return `<div class="tl-seg ${w.label}" style="width:${p}%" title="${tip}"></div>`;
     }).join('')}</div>
     <div class="tl-times"><span>0:00</span><span>${fmt.time(dur/2)}</span><span>${fmt.time(dur)}</span></div>`;
 

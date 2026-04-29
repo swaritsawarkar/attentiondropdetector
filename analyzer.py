@@ -1,11 +1,12 @@
 """
-Attention Drop Detector V6 - analyzer.py
+Attention Drop Detector V8 - analyzer.py
 ==========================================
 Signal pipeline:
-  - Face: MediaPipe FaceMesh (468 landmarks, works with glasses/movement/angles)
+  - Face: MediaPipe FaceMesh → Face Detection → Haar Cascade (3-tier fallback)
   - Motion: Farneback Optical Flow
-  - Audio: Librosa spectral speech-band energy + speech probability
+  - Audio: RMS energy (ffmpeg → moviepy → librosa direct, with smoothing)
   - Cuts: PySceneDetect ContentDetector
+  - Guard: 10-minute max video duration
 """
 
 import argparse
@@ -18,6 +19,32 @@ import tempfile
 import warnings
 from dataclasses import asdict, dataclass, field
 from typing import Optional
+
+# ── Debug log (writes to file so EXE output is visible) ──────────────────────
+_DEBUG_LOG_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(sys.argv[0] if sys.argv[0] else __file__)),
+    "debug_log.txt"
+)
+
+def _dbg(msg: str) -> None:
+    """Append a debug line to debug_log.txt next to the executable."""
+    try:
+        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(msg + "\n")
+    except Exception:
+        pass
+
+# Clear previous log on startup
+try:
+    with open(_DEBUG_LOG_PATH, "w", encoding="utf-8") as f:
+        f.write(f"=== Attention Drop Detector debug log ===\n")
+        f.write(f"Python: {sys.version}\n")
+        f.write(f"Executable: {sys.executable}\n")
+        f.write(f"Frozen: {getattr(sys, 'frozen', False)}\n")
+        f.write(f"MEIPASS: {getattr(sys, '_MEIPASS', 'N/A')}\n")
+        f.write(f"CWD: {os.getcwd()}\n\n")
+except Exception:
+    pass
 
 # Suppress TensorFlow/MediaPipe C++ warnings
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -45,10 +72,13 @@ try:
     from mediapipe.python.solutions import face_mesh as _mp_face_mesh_module
     _mp_face_mesh = _mp_face_mesh_module
     HAS_MEDIAPIPE = True
+    _dbg(f"MediaPipe loaded OK: {mp.__version__}")
 except Exception as e:
     print("\n  [DEBUG] MediaPipe failed to load. Detailed error:")
     traceback.print_exc()
     print()
+    _dbg(f"MediaPipe FAILED: {e}")
+    _dbg(traceback.format_exc())
     HAS_MEDIAPIPE = False
 
 HAS_SCENEDETECT = False
@@ -59,6 +89,10 @@ try:
 except ImportError:
     pass
 
+
+# ── Config ───────────────────────────────────────────────────────────────────
+MAX_VIDEO_DURATION_SEC = 600  # 10 minutes — change here to adjust limit
+AUDIO_SMOOTH_WINDOW    = 5    # moving-average window for audio scores
 
 # ── Content Modes ─────────────────────────────────────────────────────────────
 
@@ -243,70 +277,112 @@ def assign_cuts(cut_times: list[float], windows: list[Window]) -> None:
         w.cuts = sum(1 for t in cut_times if w.start <= t < w.end)
 
 
-# ── Audio (Librosa spectral) ──────────────────────────────────────────────────
+# ── Audio (RMS energy, layered loading, smoothed) ────────────────────────────
 
 class AudioExtractor:
+    """Layered audio loader: ffmpeg → moviepy → librosa direct → silent warn."""
+
     def __init__(self, path: str):
         self.path = path
+        self._method = "none"
+        self._loaded = False
 
-    def enrich(self, windows: list[Window]) -> None:
+    # ── internal: load helpers ────────────────────────────────────────────────
+    def _load_via_ffmpeg(self, tmp_path: str):
+        cmd = ["ffmpeg", "-y", "-i", self.path, "-vn",
+               "-acodec", "pcm_s16le", "-ar", "22050", "-ac", "1", tmp_path]
+        kw = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "check": True}
+        if sys.platform == "win32":
+            kw["creationflags"] = subprocess.CREATE_NO_WINDOW
+        subprocess.run(cmd, **kw)
+        y, sr = librosa.load(tmp_path, sr=22050, mono=True)
+        return y, sr
+
+    def _load_via_moviepy(self, tmp_path: str):
+        from moviepy.editor import VideoFileClip  # type: ignore
+        clip = VideoFileClip(self.path)
+        if clip.audio is None:
+            clip.close()
+            raise RuntimeError("No audio track via moviepy")
+        clip.audio.write_audiofile(tmp_path, fps=22050, nbytes=2,
+                                   codec="pcm_s16le", logger=None)
+        clip.close()
+        y, sr = librosa.load(tmp_path, sr=22050, mono=True)
+        return y, sr
+
+    def _load_direct(self):
+        y, sr = librosa.load(self.path, sr=22050, mono=True)
+        return y, sr
+
+    def _try_load(self):
         if librosa is None:
-            print("  [warn] librosa not installed.")
-            return
-
-        tmp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-        tmp_wav.close()
-        audio_source = self.path
-
+            return None, None
+        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        tmp.close()
         try:
-            # Use ffmpeg to extract audio robustly into a temp wav file
-            cmd = ["ffmpeg", "-y", "-i", self.path, "-vn", "-acodec", "pcm_s16le", "-ar", "22050", "-ac", "1", tmp_wav.name]
             try:
-                kwargs = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "check": True}
-                if sys.platform == "win32":
-                    # This flag is specific to Windows and prevents the console window.
-                    kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
-                subprocess.run(cmd, **kwargs)
-                audio_source = tmp_wav.name
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                print("  [warn] ffmpeg not found/failed. Trying direct load (may fail for MP4).")
-
-            y, sr = librosa.load(audio_source, sr=22050, mono=True)
-        except Exception as e:
-            print(f"  [warn] Audio load failed: {e}")
-            print("  [info] TIP: Install ffmpeg and add it to your system PATH to fix audio.")
-            if os.path.exists(tmp_wav.name):
-                os.remove(tmp_wav.name)
-            return
-
-        if os.path.exists(tmp_wav.name):
+                y, sr = self._load_via_ffmpeg(tmp.name)
+                self._method = "ffmpeg"
+                _dbg(f"Audio: loaded via ffmpeg, sr={sr}, samples={len(y)}")
+                return y, sr
+            except Exception as e1:
+                _dbg(f"Audio: ffmpeg failed ({e1}), trying moviepy")
             try:
-                os.remove(tmp_wav.name)
+                y, sr = self._load_via_moviepy(tmp.name)
+                self._method = "moviepy"
+                _dbg(f"Audio: loaded via moviepy, sr={sr}, samples={len(y)}")
+                return y, sr
+            except Exception as e2:
+                _dbg(f"Audio: moviepy failed ({e2}), trying librosa direct")
+            try:
+                y, sr = self._load_direct()
+                self._method = "librosa-direct"
+                _dbg(f"Audio: loaded via librosa direct, sr={sr}, samples={len(y)}")
+                return y, sr
+            except Exception as e3:
+                _dbg(f"Audio: all methods failed. e3={e3}")
+                print("  [warn] Audio load failed (ffmpeg/moviepy/librosa all tried).")
+                print("  [info] Install ffmpeg: winget install ffmpeg")
+                return None, None
+        finally:
+            try:
+                os.remove(tmp.name)
             except Exception:
                 pass
 
-        if y.size == 0:
-            print("  [warn] Audio array is empty.")
+    # ── public ────────────────────────────────────────────────────────────────
+    def enrich(self, windows: list[Window]) -> None:
+        y, sr = self._try_load()
+        if y is None or y.size == 0:
+            _dbg("Audio: skipping enrich — no audio data")
             return
+        self._loaded = True
 
-        hop         = 512
-        stft        = np.abs(librosa.stft(y, hop_length=hop))
-        freqs       = librosa.fft_frequencies(sr=sr)
-        mask        = (freqs >= 300) & (freqs <= 3400)
-        energy      = np.mean(stft[mask, :] ** 2, axis=0)
-        e_max       = energy.max()
-        energy_norm = energy / (e_max + 1e-9) if e_max > 0 else energy
+        hop  = 512
+        # RMS energy per frame (more stable than raw STFT magnitude)
+        rms  = librosa.feature.rms(y=y, hop_length=hop)[0]
+        rms  = np.clip(rms, 0, np.percentile(rms, 98) + 1e-9)  # clamp outliers
+        rmax = rms.max()
+        rms_norm = rms / (rmax + 1e-9) if rmax > 0 else rms
+
+        # Moving-average smoothing
+        kernel = np.ones(AUDIO_SMOOTH_WINDOW) / AUDIO_SMOOTH_WINDOW
+        rms_smooth = np.convolve(rms_norm, kernel, mode="same")
 
         zcr      = librosa.feature.zero_crossing_rate(y, hop_length=hop)[0]
         centroid = librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=hop)[0]
         speech_p = np.clip(zcr / 0.25, 0, 1) * 0.4 + np.clip(centroid / 3000.0, 0, 1) * 0.6
-        times    = librosa.frames_to_time(np.arange(len(energy_norm)), sr=sr, hop_length=hop)
+        times    = librosa.frames_to_time(np.arange(len(rms_smooth)), sr=sr, hop_length=hop)
+
+        _dbg(f"Audio: method={self._method} sr={sr} dur={len(y)/sr:.1f}s "
+             f"rms_range=[{rms_smooth.min():.3f},{rms_smooth.max():.3f}] "
+             f"smooth_win={AUDIO_SMOOTH_WINDOW}")
 
         for w in windows:
             m = (times >= w.start) & (times < w.end)
             if m.any():
-                w.audio       = round(float(energy_norm[m].mean()), 4)
-                w.speech_prob = round(float(speech_p[m].mean()), 4)
+                w.audio       = round(float(np.clip(rms_smooth[m].mean(), 0.0, 1.0)), 4)
+                w.speech_prob = round(float(np.clip(speech_p[m].mean(),   0.0, 1.0)), 4)
 
 
 # ── Face (MediaPipe FaceMesh) ─────────────────────────────────────────────────
@@ -322,17 +398,22 @@ class FaceExtractor:
         self.window_sec = window_sec
 
     def enrich(self, windows: list[Window]) -> None:
+        _dbg(f"FaceExtractor.enrich: HAS_MEDIAPIPE={HAS_MEDIAPIPE}, _mp_face_mesh={_mp_face_mesh is not None}")
+        _dbg(f"FaceExtractor.enrich: video={self.path}, exists={os.path.exists(self.path)}, size={os.path.getsize(self.path) if os.path.exists(self.path) else 'N/A'}")
         if HAS_MEDIAPIPE and _mp_face_mesh is not None:
             self._enrich_facemesh(windows)
         else:
             print("  [warn] MediaPipe not available, using Haar Cascade fallback")
+            _dbg("FALLING BACK to Haar cascade")
             self._enrich_haar(windows)
 
     def _enrich_facemesh(self, windows: list[Window]) -> None:
         if cv2 is None:
+            _dbg("_enrich_facemesh: cv2 is None, aborting")
             return
         cap = cv2.VideoCapture(self.path)
         if not cap.isOpened():
+            _dbg(f"_enrich_facemesh: VideoCapture FAILED to open: {self.path}")
             return
 
         fps           = cap.get(cv2.CAP_PROP_FPS) or 30.0
@@ -340,41 +421,49 @@ class FaceExtractor:
         win_frames    = int(self.window_sec * fps)
         n_samples     = 20  # how many frames to sample per window
 
-        with _mp_face_mesh.FaceMesh(
-            static_image_mode=True,         # True because we seek across the video, no temporal continuity
-            max_num_faces=2,
-            refine_landmarks=True,
-            min_detection_confidence=0.1,   # very low — we just want to know if face exists
-        ) as mesh:
-            for w in windows:
+        _dbg(f"_enrich_facemesh: fps={fps}, total_frames={total_frames}, win_frames={win_frames}")
+
+        try:
+            mesh_ctx = _mp_face_mesh.FaceMesh(
+                static_image_mode=True,
+                max_num_faces=2,
+                refine_landmarks=True,
+                min_detection_confidence=0.1,
+            )
+            _dbg("FaceMesh object created OK")
+        except Exception as e:
+            _dbg(f"FaceMesh CREATION FAILED: {e}")
+            _dbg(traceback.format_exc())
+            cap.release()
+            return
+
+        with mesh_ctx as mesh:
+            for wi, w in enumerate(windows):
                 start_frame = int(w.start * fps)
                 end_frame   = min(int(w.end * fps), total_frames - 1)
                 actual_frames = max(end_frame - start_frame, 1)
 
-                # Spread sample positions evenly across the full window duration.
-                # Previously cap.read() was called sequentially, so all 20 samples
-                # landed on the first ~0.7s of each window — the rest was never seen.
                 step        = max(1, actual_frames // n_samples)
-                sample_positions = range(start_frame, end_frame, step)
+                sample_positions = list(range(start_frame, end_frame, step))
 
                 detections  = 0
                 total       = 0
+                skipped_read = 0
+                skipped_black = 0
 
                 for frame_idx in sample_positions:
                     cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
                     ret, frame = cap.read()
                     if not ret:
+                        skipped_read += 1
                         continue
 
-                    # Guard against silent all-black frames that some codecs return
-                    # on bad seeks — MediaPipe always returns None for these.
                     if frame is None or frame.size == 0 or frame.max() == 0:
+                        skipped_black += 1
                         continue
 
                     total += 1
 
-                    # Downscale very large frames to 720p-wide for speed;
-                    # upscale tiny frames so landmarks have enough pixel detail.
                     h, ww = frame.shape[:2]
                     if ww > 1280:
                         frame = cv2.resize(frame, (1280, int(h * 1280 / ww)))
@@ -386,15 +475,17 @@ class FaceExtractor:
                     if results.multi_face_landmarks:
                         detections += 1
 
+                _dbg(f"  window[{wi}] {w.start}-{w.end}s: samples={len(sample_positions)} read_fail={skipped_read} black={skipped_black} total_valid={total} detections={detections}")
+
                 if total > 0 and detections > 0:
                     w.face      = True
-                    # confidence = fraction of sampled frames where face was found
                     w.face_conf = round(detections / total, 4)
                 else:
                     w.face      = False
                     w.face_conf = 0.0
 
         cap.release()
+        _dbg(f"FaceMesh complete: {sum(1 for w in windows if w.face)}/{len(windows)} windows with face")
 
     def _enrich_haar(self, windows: list[Window]) -> None:
         if cv2 is None:
@@ -571,6 +662,22 @@ def analyze(
     log(f"  Window: {window_sec}s | Mode: {MODES.get(mode, MODES[DEFAULT_MODE])['label']}")
     log(f"  MediaPipe  : {'FaceMesh ready' if HAS_MEDIAPIPE else 'NOT installed — pip install mediapipe'}")
     log(f"  SceneDetect: {'ready' if HAS_SCENEDETECT else 'NOT installed — pip install scenedetect'}\n")
+
+    # ── Max video duration guard ──────────────────────────────────────────────
+    if cv2 is not None:
+        _cap = cv2.VideoCapture(video_path)
+        if _cap.isOpened():
+            _fps    = _cap.get(cv2.CAP_PROP_FPS) or 30.0
+            _frames = int(_cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            _dur    = _frames / _fps if _fps > 0 else 0
+            _cap.release()
+            if _dur > MAX_VIDEO_DURATION_SEC:
+                mins = int(MAX_VIDEO_DURATION_SEC // 60)
+                raise ValueError(
+                    f"Video is {_dur/60:.1f} min long. "
+                    f"Current limit is {mins} minutes. "
+                    f"Trim the video or raise MAX_VIDEO_DURATION_SEC in analyzer.py."
+                )
 
     log("[1/6] Extracting motion (Farneback Optical Flow)...")
     windows, duration = MotionExtractor(video_path, window_sec).extract()

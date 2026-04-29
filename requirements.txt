@@ -5,4 +5,5 @@ scenedetect
 flask
 matplotlib
 numpy
+moviepy
 pyinstaller

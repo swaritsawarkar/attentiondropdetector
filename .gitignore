@@ -1,12 +1,26 @@
 # Environments
 venv/
 __pycache__/
+*.pyc
+*.pyo
 
 # PyInstaller Builds
 build/
 dist/
 *.spec
 
-# Media
+# Media / Generated output
 *.mp4
 *.wav
+*.avi
+*.mov
+*.mkv
+result.json
+debug_log.txt
+*_chart.png
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

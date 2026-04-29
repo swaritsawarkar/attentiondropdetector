@@ -1,5 +1,5 @@
 """
-Attention Drop Detector V6 - app.py
+Attention Drop Detector V8 - app.py
 Flask backend. Handles uploads, runs analysis in background thread,
 streams progress via polling. Opens browser automatically on launch.
 """
@@ -41,23 +41,26 @@ def _run(job_id: str, video_path: str, window_sec: float, mode: str) -> None:
     try:
         import analyzer as _an
 
-        prog(1, "Extracting motion...")
+        prog(1, "Loading video & extracting motion...")
         windows, duration = _an.MotionExtractor(video_path, window_sec).extract()
 
         prog(2, "Detecting scene cuts...")
         cuts = _an.detect_cuts(video_path)
         _an.assign_cuts(cuts, windows)
 
-        prog(3, "Analyzing audio...")
-        _an.AudioExtractor(video_path).enrich(windows)
+        prog(3, "Processing audio...")
+        audio_ex = _an.AudioExtractor(video_path)
+        audio_ex.enrich(windows)
+        audio_available = audio_ex._loaded
 
-        prog(4, "Detecting faces (FaceMesh)...")
+        prog(4, "Detecting faces...")
         _an.FaceExtractor(video_path, window_sec).enrich(windows)
 
-        prog(5, "Scoring and explaining...")
+        prog(5, "Scoring and explaining drops...")
         _an.Scorer(mode).score(windows)
         drops   = _an.Explainer(mode).explain(windows, window_sec)
         summary = _an.make_summary(windows, drops)
+        summary["audio_available"] = audio_available
 
         result = _an.Result(
             video=video_path, duration=round(duration, 2),
@@ -66,23 +69,29 @@ def _run(job_id: str, video_path: str, window_sec: float, mode: str) -> None:
         )
 
         prog(6, "Generating chart...")
-        chart_path = video_path + "_chart.png"
-        plot(result, save_path=chart_path, show=False)
-
         chart_b64 = ""
-        if os.path.exists(chart_path):
-            with open(chart_path, "rb") as f:
-                chart_b64 = base64.b64encode(f.read()).decode()
-            os.remove(chart_path)
+        chart_path = video_path + "_chart.png"
+        try:
+            plot(result, save_path=chart_path, show=False)
+            if os.path.exists(chart_path):
+                with open(chart_path, "rb") as f:
+                    chart_b64 = base64.b64encode(f.read()).decode()
+                os.remove(chart_path)
+        except Exception as ce:
+            print(f"  [warn] Chart generation failed: {ce}")
 
         with LOCK:
             JOBS[job_id].update({
                 "status":    "done",
                 "result":    asdict(result),
                 "chart_b64": chart_b64,
-                "progress":  {"step": 6, "msg": "Done"},
+                "progress":  {"step": 6, "msg": "Done!"},
             })
 
+    except ValueError as ve:
+        # User-facing errors (e.g. video too long)
+        with LOCK:
+            JOBS[job_id].update({"status": "error", "error": str(ve)})
     except Exception as e:
         with LOCK:
             JOBS[job_id].update({"status": "error", "error": str(e)})
@@ -140,6 +149,6 @@ def status(job_id):
 if __name__ == "__main__":
     import webbrowser
     port = 7432
-    print(f"Attention Drop Detector V6 — http://localhost:{port}")
+    print(f"Attention Drop Detector V8 — http://localhost:{port}")
     threading.Timer(1.2, lambda: webbrowser.open(f"http://localhost:{port}")).start()
     app.run(port=port, debug=False, threaded=True)

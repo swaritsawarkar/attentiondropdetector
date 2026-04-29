@@ -92,7 +92,7 @@ def plot(
     scores = np.array([w.score               for w in windows])
     labels = [w.label                        for w in windows]
 
-    fig = plt.figure(figsize=(14, 9), dpi=140)
+    fig = plt.figure(figsize=(12, 7), dpi=100)
     fig.patch.set_facecolor(BG)
     fig.suptitle(
         "Attention Drop Detector",
