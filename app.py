@@ -6,6 +6,7 @@ streams progress via polling. Opens browser automatically on launch.
 
 import base64
 import json
+import math
 import os
 import sys
 import tempfile
@@ -112,8 +113,13 @@ def start_analysis():
     if "video" not in request.files:
         return jsonify({"error": "No video file uploaded"}), 400
 
-    file       = request.files["video"]
-    window_sec = float(request.form.get("window", 5.0))
+    file = request.files["video"]
+    try:
+        window_sec = float(request.form.get("window", 5.0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Window duration must be a positive number"}), 400
+    if not math.isfinite(window_sec) or window_sec <= 0:
+        return jsonify({"error": "Window duration must be a positive number"}), 400
     mode       = request.form.get("mode", "default")
     if mode not in MODES:
         mode = "default"
