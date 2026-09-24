@@ -114,6 +114,8 @@ def start_analysis():
         return jsonify({"error": "No video file uploaded"}), 400
 
     file = request.files["video"]
+    if not file.filename:
+        return jsonify({"error": "No video file selected"}), 400
     try:
         window_sec = float(request.form.get("window", 5.0))
     except (TypeError, ValueError):

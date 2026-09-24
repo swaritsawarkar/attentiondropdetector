@@ -25,6 +25,14 @@ class AppRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.get_json()["error"], "No video file uploaded")
 
+    def test_analyze_requires_selected_video_filename(self):
+        response = self.client.post(
+            "/analyze",
+            data={"video": (io.BytesIO(b"video"), "")},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "No video file selected")
+
     def test_analyze_rejects_invalid_window(self):
         response = self.client.post(
             "/analyze",
