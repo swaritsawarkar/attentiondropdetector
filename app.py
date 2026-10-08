@@ -77,9 +77,15 @@ def _run(job_id: str, video_path: str, window_sec: float, mode: str) -> None:
             if os.path.exists(chart_path):
                 with open(chart_path, "rb") as f:
                     chart_b64 = base64.b64encode(f.read()).decode()
-                os.remove(chart_path)
         except Exception as ce:
             print(f"  [warn] Chart generation failed: {ce}")
+        finally:
+            try:
+                os.remove(chart_path)
+            except FileNotFoundError:
+                pass
+            except OSError as ce:
+                print(f"  [warn] Chart cleanup failed: {ce}")
 
         with LOCK:
             JOBS[job_id].update({

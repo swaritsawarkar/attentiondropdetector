@@ -7,8 +7,10 @@ Run manually: python -m pytest tests/ -v
 import json
 import os
 import sys
+import tempfile
 import types
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 import numpy as np
 
@@ -199,6 +201,41 @@ class TestAppDurationError(unittest.TestCase):
             job = flask_app.JOBS[job_id]
         self.assertEqual(job["status"], "error")
         self.assertIn("min", job["error"])
+
+
+class TestChartCleanup(unittest.TestCase):
+    def test_partial_chart_is_removed_when_plot_fails(self):
+        import app as flask_app
+
+        with tempfile.TemporaryDirectory() as directory:
+            video_path = Path(directory) / "clip.mp4"
+            video_path.write_bytes(b"video")
+            chart_path = Path(str(video_path) + "_chart.png")
+            job_id = "test-chart-cleanup"
+            with flask_app.LOCK:
+                flask_app.JOBS[job_id] = {
+                    "status": "running", "progress": {}, "result": None,
+                    "chart_b64": "", "error": None,
+                }
+
+            def partial_plot(*args, **kwargs):
+                chart_path.write_bytes(b"partial chart")
+                raise RuntimeError("chart render failed")
+
+            windows = _make_windows(1)
+            with patch("analyzer.MotionExtractor.extract", return_value=(windows, 5.0)), \
+                 patch("analyzer.detect_cuts", return_value=[]), \
+                 patch("analyzer.AudioExtractor.enrich"), \
+                 patch("analyzer.FaceExtractor.enrich"), \
+                 patch("app.plot", side_effect=partial_plot):
+                flask_app._run(job_id, str(video_path), 5.0, "default")
+
+            with flask_app.LOCK:
+                job = flask_app.JOBS.pop(job_id)
+            self.assertEqual(job["status"], "done")
+            self.assertEqual(job["chart_b64"], "")
+            self.assertFalse(chart_path.exists())
+            self.assertFalse(video_path.exists())
 
 
 if __name__ == "__main__":
