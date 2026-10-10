@@ -217,6 +217,15 @@ class MotionExtractor:
         fps          = cap.get(cv2.CAP_PROP_FPS) or 30.0
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         duration     = total_frames / fps
+        if duration > MAX_VIDEO_DURATION_SEC:
+            cap.release()
+            mins = int(MAX_VIDEO_DURATION_SEC // 60)
+            raise ValueError(
+                f"Video is {duration/60:.1f} min long. "
+                f"Current limit is {mins} minutes. "
+                f"Trim the video or raise MAX_VIDEO_DURATION_SEC in analyzer.py."
+            )
+
         win_frames   = int(self.window_sec * fps)
 
         windows, win_idx = [], 0
@@ -662,22 +671,6 @@ def analyze(
     log(f"  Window: {window_sec}s | Mode: {MODES.get(mode, MODES[DEFAULT_MODE])['label']}")
     log(f"  MediaPipe  : {'FaceMesh ready' if HAS_MEDIAPIPE else 'NOT installed — pip install mediapipe'}")
     log(f"  SceneDetect: {'ready' if HAS_SCENEDETECT else 'NOT installed — pip install scenedetect'}\n")
-
-    # ── Max video duration guard ──────────────────────────────────────────────
-    if cv2 is not None:
-        _cap = cv2.VideoCapture(video_path)
-        if _cap.isOpened():
-            _fps    = _cap.get(cv2.CAP_PROP_FPS) or 30.0
-            _frames = int(_cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            _dur    = _frames / _fps if _fps > 0 else 0
-            _cap.release()
-            if _dur > MAX_VIDEO_DURATION_SEC:
-                mins = int(MAX_VIDEO_DURATION_SEC // 60)
-                raise ValueError(
-                    f"Video is {_dur/60:.1f} min long. "
-                    f"Current limit is {mins} minutes. "
-                    f"Trim the video or raise MAX_VIDEO_DURATION_SEC in analyzer.py."
-                )
 
     log("[1/6] Extracting motion (Farneback Optical Flow)...")
     windows, duration = MotionExtractor(video_path, window_sec).extract()
