@@ -41,14 +41,15 @@ class TestMaxDurationGuard(unittest.TestCase):
         mock_cap = MagicMock()
         mock_cap.isOpened.return_value = True
         mock_cap.get.side_effect = lambda prop: {
-            0x00: 30.0,   # CAP_PROP_FPS
-            0x07: 30.0 * (an.MAX_VIDEO_DURATION_SEC + 60),  # CAP_PROP_FRAME_COUNT
+            an.cv2.CAP_PROP_FPS: 30.0,
+            an.cv2.CAP_PROP_FRAME_COUNT: 30.0 * (an.MAX_VIDEO_DURATION_SEC + 60),
         }.get(prop, 0)
 
         with patch("analyzer.cv2.VideoCapture", return_value=mock_cap):
             with self.assertRaises(ValueError) as ctx:
                 an.analyze("fake_long.mp4", verbose=False)
         self.assertIn("minutes", str(ctx.exception).lower())
+        mock_cap.release.assert_called_once()
 
     def test_short_video_does_not_raise(self):
         """analyze() must NOT raise for a 5-minute video."""
@@ -190,17 +191,20 @@ class TestAppDurationError(unittest.TestCase):
             flask_app.JOBS[job_id] = {"status": "running", "progress": {}, "result": None,
                                        "chart_b64": "", "error": None}
 
-        with patch("analyzer.analyze", side_effect=ValueError("Video is 15.0 min long.")):
-            with patch("analyzer.MotionExtractor.extract", side_effect=ValueError("Video is 15.0 min long.")):
-                # Simulate the error path directly
-                with flask_app.LOCK:
-                    flask_app.JOBS[job_id].update({"status": "error",
-                                                    "error": "Video is 15.0 min long."})
+        mock_cap = MagicMock()
+        mock_cap.isOpened.return_value = True
+        mock_cap.get.side_effect = lambda prop: {
+            an.cv2.CAP_PROP_FPS: 30.0,
+            an.cv2.CAP_PROP_FRAME_COUNT: 30.0 * (an.MAX_VIDEO_DURATION_SEC + 60),
+        }.get(prop, 0)
+        with patch("analyzer.cv2.VideoCapture", return_value=mock_cap):
+            flask_app._run(job_id, "fake_long.mp4", 5.0, "default")
 
         with flask_app.LOCK:
-            job = flask_app.JOBS[job_id]
+            job = flask_app.JOBS.pop(job_id)
         self.assertEqual(job["status"], "error")
         self.assertIn("min", job["error"])
+        mock_cap.release.assert_called_once()
 
 
 class TestChartCleanup(unittest.TestCase):
