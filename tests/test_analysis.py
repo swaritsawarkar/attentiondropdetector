@@ -58,6 +58,49 @@ class TestMaxDurationGuard(unittest.TestCase):
         self.skipTest("Requires real video file — integration test only")
 
 
+class TestWindowLimit(unittest.TestCase):
+    def test_non_finite_window_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "positive finite"):
+            an.MotionExtractor("unused.mp4", float("nan"))
+
+    def test_window_shorter_than_one_frame_is_rejected(self):
+        mock_cap = MagicMock()
+        mock_cap.isOpened.return_value = True
+        mock_cap.get.side_effect = lambda prop: {
+            an.cv2.CAP_PROP_FPS: 30.0,
+            an.cv2.CAP_PROP_FRAME_COUNT: 30.0,
+        }.get(prop, 0)
+        with patch("analyzer.cv2.VideoCapture", return_value=mock_cap):
+            with self.assertRaisesRegex(ValueError, "at least one video frame"):
+                an.MotionExtractor("unused.mp4", 0.01).extract()
+        mock_cap.read.assert_not_called()
+        mock_cap.release.assert_called_once()
+
+    def test_web_job_rejects_excessive_windows_before_reading_frames(self):
+        import app as flask_app
+
+        mock_cap = MagicMock()
+        mock_cap.isOpened.return_value = True
+        mock_cap.get.side_effect = lambda prop: {
+            an.cv2.CAP_PROP_FPS: 30.0,
+            an.cv2.CAP_PROP_FRAME_COUNT: 30.0 * an.MAX_VIDEO_DURATION_SEC,
+        }.get(prop, 0)
+        job_id = "test-window-limit"
+        with flask_app.LOCK:
+            flask_app.JOBS[job_id] = {"status": "running", "progress": {}, "result": None,
+                                       "chart_b64": "", "error": None}
+
+        with patch("analyzer.cv2.VideoCapture", return_value=mock_cap):
+            flask_app._run(job_id, "unused.mp4", 0.5, "default")
+
+        with flask_app.LOCK:
+            job = flask_app.JOBS.pop(job_id)
+        self.assertEqual(job["status"], "error")
+        self.assertIn("600 windows", job["error"])
+        mock_cap.read.assert_not_called()
+        mock_cap.release.assert_called_once()
+
+
 # ── 2. Audio extractor fallback chain ─────────────────────────────────────────
 
 class TestAudioFallback(unittest.TestCase):
