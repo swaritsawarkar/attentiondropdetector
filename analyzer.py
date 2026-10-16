@@ -11,6 +11,7 @@ Signal pipeline:
 
 import argparse
 import json
+import math
 import os
 import subprocess
 import sys
@@ -92,6 +93,7 @@ except ImportError:
 
 # ── Config ───────────────────────────────────────────────────────────────────
 MAX_VIDEO_DURATION_SEC = 600  # 10 minutes — change here to adjust limit
+MAX_ANALYSIS_WINDOWS    = 600  # bounds work even for custom CLI/API window sizes
 AUDIO_SMOOTH_WINDOW    = 5    # moving-average window for audio scores
 
 # ── Content Modes ─────────────────────────────────────────────────────────────
@@ -206,6 +208,8 @@ class MotionExtractor:
     def __init__(self, path: str, window_sec: float):
         if cv2 is None:
             raise ImportError("opencv-python not installed")
+        if not math.isfinite(window_sec) or window_sec <= 0:
+            raise ValueError("Window duration must be a positive finite number")
         self.path = path
         self.window_sec = window_sec
 
@@ -225,6 +229,15 @@ class MotionExtractor:
                 f"Current limit is {mins} minutes. "
                 f"Trim the video or raise MAX_VIDEO_DURATION_SEC in analyzer.py."
             )
+        if duration / self.window_sec > MAX_ANALYSIS_WINDOWS:
+            cap.release()
+            raise ValueError(
+                f"Analysis would create more than {MAX_ANALYSIS_WINDOWS} windows. "
+                "Increase the window duration."
+            )
+        if self.window_sec * fps < 1:
+            cap.release()
+            raise ValueError("Window duration must cover at least one video frame")
 
         win_frames   = int(self.window_sec * fps)
 

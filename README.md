@@ -116,6 +116,7 @@ Zip the entire `dist\AttentionDropDetector\` folder for distribution.
 ## ⚠️ Known Limitations
 
 - Max video: **10 minutes** (configurable in `analyzer.py`)
+- Max analysis segments: **600 windows**; a custom window must also cover at least one video frame
 - FaceMesh struggles with extreme side profiles (>70° from camera)
 - Speech probability is estimated via ZCR + spectral centroid, not a classifier
 - Scores are heuristic — not trained on real viewer retention data
